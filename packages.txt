@@ -1,0 +1,5 @@
+# Linux packages installed by Streamlit Community Cloud (apt-get).
+# These enable OCR for scanned PDFs and images in the deployed demo.
+tesseract-ocr
+tesseract-ocr-eng
+poppler-utils

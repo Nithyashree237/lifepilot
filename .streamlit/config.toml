@@ -1,0 +1,17 @@
+# Streamlit configuration for LifePilot.
+# Run from the repository root: `streamlit run lifepilot/app.py`
+
+[theme]
+primaryColor = "#5B5BD6"
+backgroundColor = "#F6F7FC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#19192E"
+font = "sans serif"
+
+[server]
+# Matches config.MAX_UPLOAD_MB (Streamlit expects megabytes).
+maxUploadSize = 25
+headless = true
+
+[browser]
+gatherUsageStats = false

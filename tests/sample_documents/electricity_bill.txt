@@ -1,0 +1,24 @@
+BANGALORE ELECTRICITY SUPPLY COMPANY LIMITED
+(A Government of Karnataka Undertaking)
+Electricity Bill / Tax Invoice
+
+Bill Date: 28/10/2026
+Invoice No: BESCOM/2026/004521
+Consumer No: 4050 1234 567
+Billing Period: 28/09/2026 to 27/10/2026
+Due Date: 06/11/2026
+
+Customer Name: Akshaya Rao
+Address: 42, 3rd Cross, Indiranagar, Bengaluru 560038
+
+Units Consumed: 312 kWh
+Tariff: Domestic LT-1
+Energy Charges: Rs. 1,850.00
+Fixed Charges: Rs. 120.00
+Electricity Tax: Rs. 188.75
+Arrears: Rs. 0.00
+
+Total Amount Due: Rs. 2,158.75
+
+Pay by 06/11/2026 to avoid disconnection.
+For billing queries call 1912 or visit bescom.karnataka.gov.in

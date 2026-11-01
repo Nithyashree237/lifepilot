@@ -1,0 +1,20 @@
+# Runtime data (database + uploads) — never commit personal documents
+data/
+
+# Local environment & secrets
+.env
+.streamlit/secrets.toml
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
