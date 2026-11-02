@@ -146,3 +146,29 @@ def test_merge_only_replaces_missing_or_low_confidence_fields() -> None:
     assert values["amount_total"].source == "llm"
     assert values["due_date"].source == "llm"
     assert all(item.confidence <= 0.82 for item in merged if item.source == "llm")
+
+
+def test_connection_without_key(monkeypatch) -> None:
+    monkeypatch.setattr(llm_fallback.config, "LLM_API_KEY", "")
+    ok, message = llm_fallback.test_connection()
+    assert ok is False
+    assert "No API key" in message
+
+
+def test_connection_success(monkeypatch) -> None:
+    monkeypatch.setattr(llm_fallback.config, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(llm_fallback.config, "LLM_MODEL", "test-model")
+    monkeypatch.setattr(
+        llm_fallback, "_default_http_call", lambda payload: json.dumps({"ok": True})
+    )
+    ok, message = llm_fallback.test_connection()
+    assert ok is True
+    assert "test-model" in message
+
+
+def test_connection_handles_non_json(monkeypatch) -> None:
+    monkeypatch.setattr(llm_fallback.config, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(llm_fallback, "_default_http_call", lambda payload: "hello")
+    ok, message = llm_fallback.test_connection()
+    assert ok is False
+    assert "Connection failed" in message

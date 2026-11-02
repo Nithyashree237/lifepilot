@@ -379,6 +379,36 @@ def extract_with_llm(
         return None
 
 
+def test_connection() -> tuple[bool, str]:
+    """Check the API key and endpoint without sending document text."""
+    if not config.llm_configured():
+        return False, "No API key configured. Set LIFEPILOT_LLM_API_KEY."
+    payload = {
+        "model": config.LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": "Reply with a single JSON object."},
+            {"role": "user", "content": 'Return {"ok": true} and nothing else.'},
+        ],
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        content = _default_http_call(payload)
+        parsed = json.loads(_strip_code_fences(content))
+        if not isinstance(parsed, dict):
+            return False, "The provider responded, but not with a JSON object."
+        return True, f"Connected to {config.LLM_BASE_URL} · model {config.LLM_MODEL}."
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+        except Exception:  # pragma: no cover - best effort
+            pass
+        return False, f"HTTP {exc.code} from the provider. {detail}".strip()
+    except Exception as exc:
+        return False, f"Connection failed: {type(exc).__name__}: {exc}"
+
+
 # ---------------------------------------------------------------------------
 # Merge
 # ---------------------------------------------------------------------------

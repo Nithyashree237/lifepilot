@@ -220,3 +220,21 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     document: Mapped[Optional[Document]] = relationship(back_populates="notifications")
+
+
+class EmailLog(Base):
+    """Delivery record for every email LifePilot tries to send.
+
+    Keeping the rendered subject and body makes the email feature inspectable
+    in the UI (an outbox) even when SMTP is not configured yet.
+    """
+
+    __tablename__ = "email_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    to_address: Mapped[str] = mapped_column(String(320), nullable=False)
+    subject: Mapped[str] = mapped_column(String(512), nullable=False)
+    body: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="sent", index=True)
+    detail: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)

@@ -12,10 +12,12 @@ from typing import Any, Iterable, Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
+from lifepilot import config
 from lifepilot.db.models import (
     AppSettings,
     Deadline,
     Document,
+    EmailLog,
     Entity,
     MissingInfo,
     Notification,
@@ -340,7 +342,12 @@ def unresolved_missing_count(session: Session, document_id: int) -> int:
 def get_settings(session: Session) -> AppSettings:
     settings = session.get(AppSettings, 1)
     if settings is None:
-        settings = AppSettings(id=1)
+        settings = AppSettings(
+            id=1,
+            email_enabled=config.EMAIL_ENABLED,
+            email_to=config.EMAIL_TO,
+            llm_model=config.LLM_MODEL or "gpt-4o-mini",
+        )
         session.add(settings)
         session.flush()
     return settings
@@ -411,6 +418,44 @@ def mark_all_notifications_read(session: Session) -> int:
         .filter(Notification.read.is_(False))
         .update({"read": True}, synchronize_session=False)
     )
+    return int(count or 0)
+
+
+# ---------------------------------------------------------------------------
+# Email outbox
+# ---------------------------------------------------------------------------
+def log_email(
+    session: Session,
+    *,
+    to_address: str,
+    subject: str,
+    body: str,
+    status: str,
+    detail: str | None = None,
+) -> EmailLog:
+    """Persist one delivery attempt so the UI can show an outbox."""
+    entry = EmailLog(
+        to_address=to_address,
+        subject=subject,
+        body=body,
+        status=status,
+        detail=detail,
+    )
+    session.add(entry)
+    session.flush()
+    return entry
+
+
+def list_email_log(session: Session, *, limit: int = 25) -> list[EmailLog]:
+    return list(
+        session.scalars(
+            select(EmailLog).order_by(EmailLog.created_at.desc()).limit(limit)
+        )
+    )
+
+
+def clear_email_log(session: Session) -> int:
+    count = session.query(EmailLog).delete(synchronize_session=False)
     return int(count or 0)
 
 

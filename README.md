@@ -247,7 +247,12 @@ All variables are read from the environment or `lifepilot/.env`.
 | `LIFEPILOT_SMTP_USER` / `_PASSWORD` | — | SMTP credentials |
 | `LIFEPILOT_SMTP_FROM` | `SMTP_USER` | sender address |
 | `LIFEPILOT_SMTP_USE_TLS` | `true` | STARTTLS |
-| `LIFEPILOT_SMTP_*` + recipient | — | recipient is set in **Settings → Email** |
+| `LIFEPILOT_SMTP_USE_SSL` | `false` | implicit TLS (port 465) |
+| `LIFEPILOT_EMAIL_TO` | — | default recipient for digests |
+| `LIFEPILOT_EMAIL_ENABLED` | `false` | start with reminders emailed |
+| `LIFEPILOT_DEMO_MODE` | `false` | auto-seed samples + guard destructive actions |
+
+Every variable can also be provided as a **Streamlit secret** with the same name, which is how a hosted deployment is configured without editing any files.
 
 ### PostgreSQL
 
@@ -259,7 +264,17 @@ Install a driver (`pip install "psycopg[binary]"`), start PostgreSQL, and run th
 
 ### Email reminders
 
-Set the SMTP variables, restart, then enable **Email me reminder digests** and enter a recipient in **Settings → Email**. A digest is sent only when the scheduler (or **Run reminder check now**) creates new reminders.
+Set the SMTP variables (or Streamlit secrets), restart, then open **Settings → Email**:
+
+- **Send test email** sends a real email to the configured recipient so you can verify delivery in seconds.
+- **Test connection** authenticates against the SMTP server without sending anything and reports exactly what is wrong (for Gmail: use a 16-character App Password).
+- **Email unread digest** sends the current unread reminders as one email.
+- The **outbox** lists every attempt with the rendered subject/body, so failures are visible instead of silent.
+- The **preview** shows the exact message LifePilot would send.
+
+A digest is sent automatically when the scheduler (or **Run reminder check now**) creates new reminders, provided **Email me reminder digests** is enabled.
+
+For Gmail: enable 2-Step Verification, then create an App Password at <https://myaccount.google.com/apppasswords> — your normal password will not work.
 
 ---
 
@@ -296,7 +311,7 @@ Run from the folder that contains `lifepilot/`:
 python -m pytest lifepilot/tests -q
 ```
 
-Expected: **75 passed**. Tests use an in-memory SQLite database and the bundled `.txt`/PDF samples, so no network, OCR or API key is required.
+Expected: **86 passed**. Tests use an in-memory SQLite database and the bundled `.txt`/PDF samples, so no network, OCR or API key is required.
 
 Regenerate the sample PDFs (requires `reportlab`):
 
@@ -331,10 +346,19 @@ git push -u origin main
 3. Repository: `<your-username>/lifepilot`, branch: `main`, main file path: `app.py`.
 4. Open **Advanced settings**:
    - **Python version:** 3.12
-   - **Secrets** (paste this TOML):
+   - **Secrets** (paste this TOML — see `.streamlit/secrets.toml.example`):
 
      ```toml
      LIFEPILOT_DEMO_MODE = "true"
+
+     # Optional: real email delivery for reviewers who want to see it work.
+     LIFEPILOT_SMTP_HOST = "smtp.gmail.com"
+     LIFEPILOT_SMTP_PORT = "587"
+     LIFEPILOT_SMTP_USER = "you@gmail.com"
+     LIFEPILOT_SMTP_PASSWORD = "your-16-character-app-password"
+     LIFEPILOT_SMTP_FROM = "you@gmail.com"
+     LIFEPILOT_EMAIL_TO = "you@gmail.com"
+     LIFEPILOT_EMAIL_ENABLED = "true"
      ```
 
 5. Click **Deploy**. The first build takes a few minutes (spaCy is the slowest dependency).
@@ -344,8 +368,8 @@ Your app is live at `https://<app-name>.streamlit.app` — that is the link to p
 ### What demo mode does
 
 - Loads the four bundled sample documents on first launch, so the dashboard is never empty.
-- Disables **Clear all documents** / bulk deletion.
-- Keeps AI assist and email off (no API key or SMTP credentials are exposed).
+- Disables **Delete**, **Clear all documents** and other destructive actions, and offers **Reset demo data** instead.
+- Keeps AI assist and email off unless you deliberately add those secrets (no API key or SMTP credentials are ever committed).
 - Adds a visible notice asking visitors not to upload personal documents.
 
 The public filesystem is ephemeral: the SQLite database and uploaded files reset when Streamlit restarts or redeploys the app. That is fine for a portfolio demo and avoids accumulating visitors' data.

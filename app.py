@@ -39,9 +39,11 @@ import plotly.express as px
 import streamlit as st
 
 from lifepilot import config
+from lifepilot import notifications as mail
 from lifepilot.db import crud
 from lifepilot.db.database import init_db, session_scope
 from lifepilot.exports.calendar import build_calendar, build_document_calendar
+from lifepilot.pipeline import llm_fallback
 from lifepilot.pipeline.ocr import ocr_available
 from lifepilot.pipeline.processor import process_document, save_upload
 from lifepilot.pipeline.tasks import EXPECTED_FIELDS
@@ -675,6 +677,22 @@ def load_notifications(include_read: bool = True) -> list[dict]:
         ]
 
 
+def load_email_log(limit: int = 15) -> list[dict]:
+    with session_scope() as session:
+        return [
+            {
+                "id": item.id,
+                "to": item.to_address,
+                "subject": item.subject,
+                "body": item.body,
+                "status": item.status,
+                "detail": item.detail or "",
+                "created_at": item.created_at,
+            }
+            for item in crud.list_email_log(session, limit=limit)
+        ]
+
+
 # ---------------------------------------------------------------------------
 # Shared actions
 # ---------------------------------------------------------------------------
@@ -731,6 +749,26 @@ def delete_all_documents() -> None:
     st.rerun()
 
 
+def reset_demo_data() -> None:
+    """Restore the four bundled samples (public demo only)."""
+    paths: list[str] = []
+    with session_scope() as session:
+        for document in crud.list_documents(session, limit=5000):
+            paths.append(document.stored_path)
+            crud.delete_document(session, document.id)
+        created = seed_demo_documents(session)
+        check_reminders(session, email_fn=lambda _n, _t: (False, "demo"))
+    for path in paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            pass
+    st.session_state["selected_doc"] = None
+    st.session_state["upload_results"] = []
+    flash(f"Demo reset · {len(created)} sample document(s) reloaded.")
+    st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
@@ -777,6 +815,7 @@ def render_sidebar() -> str:
               <strong>System status</strong><br/>
               OCR: {"ready" if ocr_available() else "Tesseract not found"}<br/>
               AI assist: {"available" if config.llm_configured() else "not configured"}<br/>
+              Email: {"ready" if mail.email_configured() else "off"}<br/>
               Reminders: {"running" if scheduler["running"] else "paused"}{"<br/>Mode: public demo" if config.DEMO_MODE else ""}
             </div>
             """,
@@ -1286,20 +1325,23 @@ def render_document_detail(document_id: int) -> None:
         flash(f"Reminder check complete · {run.created} new reminder(s).")
         st.rerun()
 
-    with action_cols[3].popover("Delete"):
-        st.markdown("**Delete this document?**")
-        st.caption("Extracted fields, tasks, deadlines and reminders will be removed.")
-        if st.button("Yes, delete", key="delete_doc_confirm", type="primary"):
-            path = detail["stored_path"]
-            with session_scope() as session:
-                crud.delete_document(session, document_id)
-            try:
-                Path(path).unlink(missing_ok=True)
-            except OSError:
-                pass
-            st.session_state["selected_doc"] = None
-            flash("Document deleted.", "warning")
-            goto("Documents")
+    if config.DEMO_MODE:
+        action_cols[3].caption("Delete is disabled in the demo.")
+    else:
+        with action_cols[3].popover("Delete"):
+            st.markdown("**Delete this document?**")
+            st.caption("Extracted fields, tasks, deadlines and reminders will be removed.")
+            if st.button("Yes, delete", key="delete_doc_confirm", type="primary"):
+                path = detail["stored_path"]
+                with session_scope() as session:
+                    crud.delete_document(session, document_id)
+                try:
+                    Path(path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+                st.session_state["selected_doc"] = None
+                flash("Document deleted.", "warning")
+                goto("Documents")
 
     metric_cols = st.columns(4)
     metric_card(metric_cols[0], "Extracted fields", len(detail["entities"]), "with confidence scores", "🧩")
@@ -1586,7 +1628,15 @@ def render_reminders() -> None:
     metric_card(top[1], "Next check", status["next_run"].strftime("%d %b · %H:%M") if status["next_run"] else "—", f'every {config.REMINDER_CHECK_HOURS}h', "🔄")
     unread = load_notifications(include_read=False)
     metric_card(top[2], "Unread alerts", len(unread), "in-app notifications", "🔔", "warn" if unread else "good")
-    metric_card(top[3], "Email", "Configured" if config.smtp_configured() else "Off", "SMTP digest", "✉️")
+    email_state = mail.email_status()
+    metric_card(
+        top[3],
+        "Email",
+        "Ready" if email_state["configured"] else "Preview only",
+        "SMTP digest",
+        "✉️",
+        "good" if email_state["configured"] else "warn",
+    )
     st.markdown("")
     if st.button("Run reminder check now", key="run_reminders", type="primary"):
         with st.spinner("Checking deadlines…"):
@@ -1874,33 +1924,151 @@ def render_settings() -> None:
                 )
             flash("AI settings saved.")
             st.rerun()
-        st.caption("Configuration is read from environment variables: LIFEPILOT_LLM_API_KEY, LIFEPILOT_LLM_BASE_URL, LIFEPILOT_LLM_MODEL.")
+        ai_cols = st.columns([1.2, 3.0], vertical_alignment="center")
+        if ai_cols[0].button("🔌 Test connection", key="test_llm", disabled=not key_ready):
+            with st.spinner("Calling the provider…"):
+                ok, message = llm_fallback.test_connection()
+            flash(message, "success" if ok else "error")
+            st.rerun()
+        ai_cols[1].caption(
+            "Runs a tiny JSON round-trip. No document text is sent."
+        )
+        st.caption(
+            "Configured via LIFEPILOT_LLM_API_KEY, LIFEPILOT_LLM_BASE_URL and LIFEPILOT_LLM_MODEL "
+            "(environment variables or Streamlit secrets)."
+        )
 
     with tabs[2]:
         st.markdown("### Email reminders")
-        ready = config.smtp_configured()
+        status = mail.email_status()
+        ready = status["configured"]
         if ready:
-            st.success(f"SMTP configured: {config.SMTP_HOST}:{config.SMTP_PORT} · from {config.SMTP_FROM}")
+            st.success(
+                f"SMTP ready · {status['host']}:{status['port']} ({status['security']}) · "
+                f"from {status['sender']}"
+            )
         else:
-            st.info("SMTP is not configured. Set LIFEPILOT_SMTP_HOST, LIFEPILOT_SMTP_PORT, LIFEPILOT_SMTP_USER, LIFEPILOT_SMTP_PASSWORD and LIFEPILOT_SMTP_FROM.")
+            st.warning(
+                "Email is not configured on this deployment yet, so reminders only appear in-app. "
+                "Everything below becomes live as soon as the SMTP settings are supplied."
+            )
+            if status["missing"]:
+                st.markdown(
+                    "Missing: " + ", ".join(f"`{name}`" for name in status["missing"])
+                )
+            st.markdown(
+                "Add these in **Streamlit Cloud → App settings → Secrets** "
+                "(or in `.env` when running locally):"
+            )
+            st.code(
+                'LIFEPILOT_SMTP_HOST = "smtp.gmail.com"\n'
+                'LIFEPILOT_SMTP_PORT = "587"\n'
+                'LIFEPILOT_SMTP_USER = "you@gmail.com"\n'
+                'LIFEPILOT_SMTP_PASSWORD = "your-16-character-app-password"\n'
+                'LIFEPILOT_SMTP_FROM = "you@gmail.com"\n'
+                'LIFEPILOT_EMAIL_TO = "you@gmail.com"',
+                language="toml",
+            )
+            st.caption(
+                "Gmail needs 2-Step Verification turned on and a 16-character App Password "
+                "(Google Account → Security → App passwords). Your normal password will not work."
+            )
+
+        default_to = values["email_to"] or config.EMAIL_TO
         with st.form("email_settings"):
             email_enabled = st.checkbox(
                 "Email me reminder digests",
                 value=bool(values["email_enabled"]) and ready,
                 disabled=not ready,
             )
-            email_to = st.text_input("Recipient email", value=values["email_to"])
-            submitted = st.form_submit_button("Save email settings", type="primary", disabled=not ready)
+            email_to = st.text_input(
+                "Recipient email",
+                value=default_to,
+                disabled=not ready or config.DEMO_MODE,
+                help="Where reminder digests and test emails are sent.",
+            )
+            submitted = st.form_submit_button(
+                "Save email settings", type="primary", disabled=not ready
+            )
         if submitted:
             with session_scope() as session:
                 crud.update_settings(
                     session,
                     email_enabled=bool(email_enabled),
-                    email_to=email_to.strip(),
+                    email_to=(email_to or default_to).strip(),
                 )
             flash("Email settings saved.")
             st.rerun()
-        st.caption("Email is sent only when the scheduler creates a new reminder. SMTP credentials never leave the server.")
+        if config.DEMO_MODE:
+            st.caption(
+                "Public demo: the recipient is fixed so the shared mailbox cannot be used "
+                "to email arbitrary addresses."
+            )
+
+        actions = st.columns(4)
+        recipient = (email_to or default_to).strip()
+        if actions[0].button(
+            "✉️ Send test email",
+            key="send_test_email",
+            disabled=not ready or not recipient,
+        ):
+            with st.spinner("Sending…"):
+                ok, message = mail.send_test_email(recipient)
+            flash(message, "success" if ok else "error")
+            st.rerun()
+        if actions[1].button("🔌 Test connection", key="test_smtp", disabled=not ready):
+            with st.spinner("Connecting to the SMTP server…"):
+                ok, message = mail.test_connection()
+            flash(message, "success" if ok else "error")
+            st.rerun()
+        if actions[2].button("📨 Email unread digest", key="send_digest", disabled=not ready):
+            with session_scope() as session:
+                pending = list(crud.list_notifications(session, unread_only=True, limit=50))
+            if not pending:
+                flash("There are no unread reminders to email.", "warning")
+            else:
+                with st.spinner("Sending digest…"):
+                    ok, message = mail.send_reminder_digest(pending, recipient)
+                flash(f"{message} ({len(pending)} reminder(s))", "success" if ok else "error")
+            st.rerun()
+        if actions[3].button("🗑️ Clear outbox", key="clear_outbox"):
+            with session_scope() as session:
+                removed = crud.clear_email_log(session)
+            flash(f"Removed {removed} outbox entry(s).", "warning")
+            st.rerun()
+
+        subject, body = mail.render_test_email()
+        with st.expander("Preview the test email"):
+            st.markdown(f"**Subject:** {subject}")
+            st.text(body)
+            st.caption("The same content is delivered as an HTML email as well.")
+
+        st.markdown("#### Outbox")
+        entries = load_email_log(12)
+        if not entries:
+            st.caption("No email has been sent yet. Configure SMTP and use **Send test email**.")
+        else:
+            for entry in entries:
+                badge = {"sent": "high", "failed": "low"}.get(entry["status"], "neutral")
+                with st.container(border=True):
+                    cols = st.columns([4.2, 1.1, 2.2], vertical_alignment="center")
+                    cols[0].markdown(
+                        f'<div class="dt">{esc(entry["subject"])}</div>'
+                        f'<div class="ds">{esc(entry["to"])} · {fmt_date(entry["created_at"])}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    cols[1].markdown(
+                        f'<span class="lp-badge {badge}">{esc(entry["status"].title())}</span>',
+                        unsafe_allow_html=True,
+                    )
+                    cols[2].caption(entry["detail"][:140] or "—")
+                    if entry["body"]:
+                        with st.expander("Show message"):
+                            st.text(entry["body"])
+        st.caption(
+            "Email is sent only when the scheduler creates a new reminder, or when you press a "
+            "button above. SMTP credentials never leave the server and are never written to the database."
+        )
 
     with tabs[3]:
         documents = load_documents()
@@ -1915,7 +2083,11 @@ def render_settings() -> None:
             if st.button("Load sample documents", key="settings_samples", width="stretch"):
                 load_samples()
             if config.DEMO_MODE:
-                st.caption("Bulk delete is disabled in the public demo.")
+                if st.button("Reset demo data", key="settings_reset_demo", width="stretch"):
+                    reset_demo_data()
+                st.caption(
+                    "Bulk delete is disabled in the public demo. Reset reloads the four samples."
+                )
             elif st.button("Clear sample data" if len(documents) == 4 else "Clear all documents", key="settings_clear", width="stretch"):
                 st.session_state["confirm_clear"] = True
             if st.session_state.get("confirm_clear") and not config.DEMO_MODE:
@@ -1939,7 +2111,9 @@ def render_settings() -> None:
                   Tesseract OCR: {"ready" if ocr_available() else "not found"}<br/>
                   Reminder scheduler: {"running" if scheduler["running"] else "paused"}<br/>
                   LLM key: {"configured" if config.llm_configured() else "not configured"}<br/>
-                  SMTP: {"configured" if config.smtp_configured() else "not configured"}<br/>
+                  SMTP: {"configured" if mail.email_configured() else "not configured"}<br/>
+                  {"Email security: " + mail.email_status()["security"] + "<br/>" if mail.email_configured() else ""}
+                  Demo mode: {"on" if config.DEMO_MODE else "off"}<br/>
                   spacy: check the model with <code>python -m spacy validate</code>
                   </span>
                 </div>
