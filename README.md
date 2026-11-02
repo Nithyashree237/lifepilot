@@ -2,6 +2,8 @@
 
 **Turn paperwork into a plan.** LifePilot reads bills, receipts, warranties, rental agreements, certificates and application forms, extracts the fields that matter, and turns them into deadlines, tasks and calendar reminders — all on your own machine.
 
+🟢 **Live demo:** <https://lifepilot-mddq.onrender.com> · **Code:** <https://github.com/Nithyashree237/lifepilot>
+
 Built with **Streamlit · SQLAlchemy (SQLite/PostgreSQL) · pdfplumber + Tesseract OCR · spaCy · pandas/Plotly · APScheduler · icalendar**.
 
 ---
@@ -321,49 +323,31 @@ python -m lifepilot.tests.make_samples
 
 ---
 
-## Deploy a public demo (Streamlit Community Cloud)
+## Deploy a public demo (Render)
 
-The repository is already prepared for a free public deployment: `app.py` is at the root, `requirements.txt` and `packages.txt` install Python and OCR dependencies, and **demo mode** auto-loads the samples so visitors land on a populated dashboard.
+Live demo: **<https://lifepilot-mddq.onrender.com>**
+
+The repository is prepared for a free public deployment: a `Dockerfile` builds the runtime (Python + Tesseract + Poppler) and **demo mode** auto-loads the samples so visitors land on a populated dashboard.
 
 ### 1. Push the project to GitHub
 
-Create an empty **public** repository at <https://github.com/new> (no README, no .gitignore), then from the `lifepilot/` folder:
+The code lives in a public repository: <https://github.com/Nithyashree237/lifepilot>. `data/`, `.env` and `.streamlit/secrets.toml` are git-ignored, so your local database and secrets are never published.
 
-```powershell
-git init -b main
-git add .
-git commit -m "LifePilot: document-to-action assistant"
-git remote add origin https://github.com/<your-username>/lifepilot.git
-git push -u origin main
-```
+### 2. Create the Render web service
 
-`data/`, `.env` and `.streamlit/secrets.toml` are git-ignored, so your local database and secrets are never published.
+1. Sign in to <https://render.com> with GitHub.
+2. **New → Web Service** → source: **Public Git Repository** → `https://github.com/Nithyashree237/lifepilot`.
+3. Configure: name `lifepilot`, branch `main`, runtime **Docker**, compute plan **Free**.
+4. Add an environment variable:
 
-### 2. Create the app
+   ```env
+   LIFEPILOT_DEMO_MODE=true
+   ```
 
-1. Go to <https://share.streamlit.io> and sign in with GitHub.
-2. Click **Create app** → **Deploy a public app from GitHub**.
-3. Repository: `<your-username>/lifepilot`, branch: `main`, main file path: `app.py`.
-4. Open **Advanced settings**:
-   - **Python version:** 3.12
-   - **Secrets** (paste this TOML — see `.streamlit/secrets.toml.example`):
+   Optionally add the SMTP variables for real email delivery (see `.env.example`).
+5. Click **Deploy web service**. The first build takes a few minutes (spaCy is the slowest dependency).
 
-     ```toml
-     LIFEPILOT_DEMO_MODE = "true"
-
-     # Optional: real email delivery for reviewers who want to see it work.
-     LIFEPILOT_SMTP_HOST = "smtp.gmail.com"
-     LIFEPILOT_SMTP_PORT = "587"
-     LIFEPILOT_SMTP_USER = "you@gmail.com"
-     LIFEPILOT_SMTP_PASSWORD = "your-16-character-app-password"
-     LIFEPILOT_SMTP_FROM = "you@gmail.com"
-     LIFEPILOT_EMAIL_TO = "you@gmail.com"
-     LIFEPILOT_EMAIL_ENABLED = "true"
-     ```
-
-5. Click **Deploy**. The first build takes a few minutes (spaCy is the slowest dependency).
-
-Your app is live at `https://<app-name>.streamlit.app` — that is the link to put on your resume. Each push to `main` redeploys automatically.
+Your app is live at `https://<app-name>.onrender.com` — that is the link to put on your resume. Push to `main` and press **Manual Deploy → Deploy latest commit** to release a change.
 
 ### What demo mode does
 
@@ -372,14 +356,14 @@ Your app is live at `https://<app-name>.streamlit.app` — that is the link to p
 - Keeps AI assist and email off unless you deliberately add those secrets (no API key or SMTP credentials are ever committed).
 - Adds a visible notice asking visitors not to upload personal documents.
 
-The public filesystem is ephemeral: the SQLite database and uploaded files reset when Streamlit restarts or redeploys the app. That is fine for a portfolio demo and avoids accumulating visitors' data.
+The public filesystem is ephemeral: the SQLite database and uploaded files reset when the service redeploys or restarts. That is fine for a portfolio demo and avoids accumulating visitors' data.
 
-`packages.txt` installs `tesseract-ocr`, `tesseract-ocr-eng` and `poppler-utils` on the Linux host, so scanned PDFs and images also get OCR in the deployed app.
+The `Dockerfile` installs `tesseract-ocr`, `tesseract-ocr-eng` and `poppler-utils`, so scanned PDFs and images also get OCR in the deployed app (`packages.txt` does the same on Streamlit Community Cloud).
 
-### Optional: a custom URL / other hosts
+### Optional: other hosts
 
-- Streamlit Cloud allows a custom subdomain in **App settings → General**.
-- The same repo runs on **Render**, **Railway**, **Fly.io** or **Hugging Face Spaces** if you prefer their free tiers; set `LIFEPILOT_DEMO_MODE=true` as an environment variable and keep `packages.txt`/system packages available for OCR. For PostgreSQL hosting, set `LIFEPILOT_DB_URL`; the schema is portable.
+- Streamlit Community Cloud (`share.streamlit.io`) is the alternative if you can reach its sign-in servers: repo `Nithyashree237/lifepilot`, main file `app.py`, secrets from `.streamlit/secrets.toml.example`.
+- The same repo runs on **Railway**, **Fly.io** or **Hugging Face Spaces** if you prefer them; set `LIFEPILOT_DEMO_MODE=true` as an environment variable and keep the OCR system packages available. For PostgreSQL hosting, set `LIFEPILOT_DB_URL`; the schema is portable.
 - If you enable AI assist publicly, set a spending limit on your LLM API key — strangers can trigger calls.
 
 ## Troubleshooting
