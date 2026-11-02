@@ -7,8 +7,8 @@ Every deployment-specific value is read from (in order):
 3. the default below.
 
 That order means a local ``.env`` file keeps working, while a hosted app can be
-configured entirely from **Streamlit Cloud -> App settings -> Secrets** without
-committing anything to the repository.
+configured entirely from its dashboard (**Render -> Environment**, or Streamlit
+Cloud -> App settings -> Secrets) without committing anything to the repository.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ EXPORT_DIR: Path = DATA_DIR / "exports"
 SAMPLE_DIR: Path = BASE_DIR / "tests" / "sample_documents"
 
 # Optional explicit paths for the OCR binaries. On Windows the usual install
-# locations are detected automatically; on Linux (Streamlit Cloud) both tools
+# locations are detected automatically; on Linux (Render / Streamlit Cloud) both tools
 # are installed system-wide by packages.txt and found on PATH.
 def _first_existing(candidates: list[str]) -> str:
     for candidate in candidates:

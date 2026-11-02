@@ -1957,8 +1957,9 @@ def render_settings() -> None:
                     "Missing: " + ", ".join(f"`{name}`" for name in status["missing"])
                 )
             st.markdown(
-                "Add these in **Streamlit Cloud → App settings → Secrets** "
-                "(or in `.env` when running locally):"
+                "Add these as environment variables on your host "
+                "(**Render → Environment**, or Streamlit Cloud → App settings → Secrets) "
+                "or in `.env` when running locally:"
             )
             st.code(
                 'LIFEPILOT_SMTP_HOST = "smtp.gmail.com"\n'
