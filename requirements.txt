@@ -10,7 +10,8 @@ plotly==7.1.0
 SQLAlchemy==2.1.6
 
 # Document reading
-pdfplumber==0.11.10
+# 0.11.10 requires Pillow>=12, which Streamlit (Pillow<12) forbids; 0.11.9 works with both.
+pdfplumber==0.11.9
 pytesseract==0.3.13
 pdf2image==1.17.0
 pillow==11.3.0
